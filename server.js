@@ -33,9 +33,17 @@ app.use(
     origin: (origin, callback) => {
       // Permite requisições sem origin (ex: Postman, curl, file://)
       if (!origin) return callback(null, true);
+      
+      // Verifica se a origem está na lista de permitidas
       if (allowedOrigins.includes(origin)) return callback(null, true);
+      
+      // Permite qualquer subdomínio do Netlify
+      if (origin && origin.includes('.netlify.app')) return callback(null, true);
+      
       // Em desenvolvimento, permite qualquer origem
       if (process.env.NODE_ENV === 'development') return callback(null, true);
+      
+      console.log(`[CORS] Origem bloqueada: ${origin}`);
       callback(new Error(`CORS: Origem não permitida: ${origin}`));
     },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
