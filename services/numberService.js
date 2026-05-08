@@ -48,10 +48,12 @@ const getAvailableNumbers = async () => {
 };
 
 /**
- * Reserva aleatoriamente `quantidade` números disponíveis para um comprador.
+ * Reserva números para um comprador.
+ * Se `specificNumbers` for fornecido, reserva esses números específicos.
+ * Caso contrário, sorteia aleatoriamente `quantidade` números disponíveis.
  * Usa sessão/transação MongoDB para evitar race conditions.
  */
-const reserveNumbers = async (quantidade, compradorNome, compradorTelefone) => {
+const reserveNumbers = async (quantidade, compradorNome, compradorTelefone, specificNumbers = null) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
@@ -60,29 +62,52 @@ const reserveNumbers = async (quantidade, compradorNome, compradorTelefone) => {
     const ticketPrice = parseFloat(process.env.PRICE_PER_NUMBER) / 100 || 5.0;
     const expiresAt = new Date(Date.now() + timeoutMinutes * 60 * 1000);
 
-    // Busca números disponíveis dentro da transação
-    const availableNumbers = await Number.find({ status: 'disponivel' })
-      .session(session)
-      .lean();
+    let selectedNums = [];
+    let selectedIds = [];
 
-    if (availableNumbers.length < quantidade) {
-      throw new Error(
-        `Números insuficientes. Disponíveis: ${availableNumbers.length}, Solicitados: ${quantidade}`
-      );
+    if (specificNumbers && Array.isArray(specificNumbers) && specificNumbers.length > 0) {
+      // Modo de seleção manual - reserva números específicos
+      const requestedNumbers = await Number.find({
+        numero: { $in: specificNumbers },
+        status: 'disponivel'
+      }).session(session).lean();
+
+      if (requestedNumbers.length < specificNumbers.length) {
+        const unavailable = specificNumbers.filter(
+          n => !requestedNumbers.find(r => r.numero === n)
+        );
+        throw new Error(
+          `Alguns números selecionados não estão mais disponíveis: ${unavailable.join(', ')}`
+        );
+      }
+
+      selectedIds = requestedNumbers.map((n) => n._id);
+      selectedNums = requestedNumbers.map((n) => n.numero).sort((a, b) => a - b);
+    } else {
+      // Modo de sorteio automático - seleciona aleatoriamente
+      const availableNumbers = await Number.find({ status: 'disponivel' })
+        .session(session)
+        .lean();
+
+      if (availableNumbers.length < quantidade) {
+        throw new Error(
+          `Números insuficientes. Disponíveis: ${availableNumbers.length}, Solicitados: ${quantidade}`
+        );
+      }
+
+      // Seleciona aleatoriamente
+      const shuffled = availableNumbers.sort(() => Math.random() - 0.5);
+      const selected = shuffled.slice(0, quantidade);
+      selectedIds = selected.map((n) => n._id);
+      selectedNums = selected.map((n) => n.numero);
     }
-
-    // Seleciona aleatoriamente
-    const shuffled = availableNumbers.sort(() => Math.random() - 0.5);
-    const selected = shuffled.slice(0, quantidade);
-    const selectedIds = selected.map((n) => n._id);
-    const selectedNums = selected.map((n) => n.numero);
 
     // Cria o pedido
     const order = new Order({
       numeros: selectedNums,
       comprador_nome: compradorNome,
       comprador_telefone: compradorTelefone,
-      valor_total: quantidade * ticketPrice,
+      valor_total: selectedNums.length * ticketPrice,
       expires_at: expiresAt,
     });
     await order.save({ session });

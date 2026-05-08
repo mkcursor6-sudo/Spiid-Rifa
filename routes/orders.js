@@ -58,7 +58,7 @@ const createLock = (lockKey) => {
  */
 router.post('/', async (req, res) => {
   try {
-    const { quantidade, comprador_nome, comprador_telefone } = req.body;
+    const { quantidade, numeros, comprador_nome, comprador_telefone } = req.body;
 
     // Validações
     if (!comprador_nome || typeof comprador_nome !== 'string' || comprador_nome.trim().length < 2) {
@@ -75,11 +75,34 @@ router.post('/', async (req, res) => {
       });
     }
 
-    const qty = parseInt(quantidade);
-    if (!qty || qty < 1 || qty > 700) {
+    // Suporta tanto quantidade (antigo) quanto numeros (novo - seleção manual)
+    let selectedNumbers = null;
+    let qty = 0;
+
+    if (numeros && Array.isArray(numeros) && numeros.length > 0) {
+      // Modo de seleção manual
+      selectedNumbers = numeros.map(n => parseInt(n)).filter(n => n >= 1 && n <= 700);
+      qty = selectedNumbers.length;
+      
+      if (qty === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Nenhum número válido selecionado.',
+        });
+      }
+    } else if (quantidade) {
+      // Modo de quantidade (sorteio automático)
+      qty = parseInt(quantidade);
+      if (!qty || qty < 1 || qty > 700) {
+        return res.status(400).json({
+          success: false,
+          message: 'Quantidade inválida. Escolha entre 1 e 700 números.',
+        });
+      }
+    } else {
       return res.status(400).json({
         success: false,
-        message: 'Quantidade inválida. Escolha entre 1 e 700 números.',
+        message: 'Informe a quantidade ou selecione os números.',
       });
     }
 
@@ -131,8 +154,8 @@ router.post('/', async (req, res) => {
       });
     }
 
-    // Reserva os números
-    const order = await numberService.reserveNumbers(qty, nome, telefone);
+    // Reserva os números (com seleção manual ou sorteio automático)
+    const order = await numberService.reserveNumbers(qty, nome, telefone, selectedNumbers);
 
     // Cria o pagamento Pix
     const pixData = await pixService.createPixPayment(order);
