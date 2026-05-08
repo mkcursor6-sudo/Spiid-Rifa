@@ -296,4 +296,175 @@ router.post('/orders/:id/mark-waiting', requireAuth, async (req, res) => {
   }
 });
 
+/**
+ * POST /api/admin/sortear-ganhador
+ * Sorteia um número vencedor entre os números vendidos
+ */
+router.post('/sortear-ganhador', async (req, res) => {
+  try {
+    const { password } = req.body;
+
+    // Valida senha
+    if (password !== process.env.ADMIN_PASSWORD) {
+      return res.status(401).json({
+        success: false,
+        message: 'Senha incorreta.',
+      });
+    }
+
+    const Number = require('../models/Number');
+    const RaffleState = require('../models/RaffleState');
+
+    // Verifica se já foi sorteado
+    let raffleState = await RaffleState.findById('global');
+    if (raffleState && raffleState.status === 'finalizada') {
+      return res.status(400).json({
+        success: false,
+        message: 'O sorteio já foi realizado!',
+        data: {
+          numero_vencedor: raffleState.numero_vencedor,
+          ganhador_nome: raffleState.ganhador_nome,
+          sorteio_realizado_em: raffleState.sorteio_realizado_em,
+        },
+      });
+    }
+
+    // Busca todos os números vendidos
+    const numerosPagos = await Number.find({ status: 'vendido' }).lean();
+
+    if (numerosPagos.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Não há números vendidos para sortear.',
+      });
+    }
+
+    // Sorteia um número aleatório
+    const sorteado = numerosPagos[Math.floor(Math.random() * numerosPagos.length)];
+
+    // Cria ou atualiza o estado da rifa
+    if (!raffleState) {
+      raffleState = new RaffleState({ _id: 'global' });
+    }
+
+    raffleState.status = 'finalizada';
+    raffleState.numero_vencedor = sorteado.numero;
+    raffleState.ganhador_nome = sorteado.comprador_nome;
+    raffleState.ganhador_telefone = sorteado.comprador_telefone;
+    raffleState.order_id_vencedor = sorteado.order_id;
+    raffleState.sorteio_realizado_em = new Date();
+    
+    await raffleState.save();
+
+    console.log('[Admin] Ganhador sorteado:', sorteado.numero, '-', sorteado.comprador_nome);
+
+    res.json({
+      success: true,
+      message: 'Ganhador sorteado com sucesso!',
+      data: {
+        numero_vencedor: sorteado.numero,
+        ganhador_nome: sorteado.comprador_nome,
+        ganhador_telefone: sorteado.comprador_telefone,
+        total_numeros_vendidos: numerosPagos.length,
+        sorteio_realizado_em: raffleState.sorteio_realizado_em,
+      },
+    });
+  } catch (error) {
+    console.error('[Admin] Erro ao sortear ganhador:', error.message);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao sortear ganhador.',
+      error: error.message,
+    });
+  }
+});
+
+/**
+ * GET /api/admin/estado-sorteio
+ * Retorna o estado atual do sorteio
+ */
+router.get('/estado-sorteio', async (req, res) => {
+  try {
+    const RaffleState = require('../models/RaffleState');
+    const raffleState = await RaffleState.findById('global').lean();
+
+    if (!raffleState || raffleState.status === 'ativa') {
+      return res.json({
+        success: true,
+        data: {
+          status: 'ativa',
+          finalizada: false,
+        },
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        status: 'finalizada',
+        finalizada: true,
+        numero_vencedor: raffleState.numero_vencedor,
+        ganhador_nome: raffleState.ganhador_nome,
+        sorteio_realizado_em: raffleState.sorteio_realizado_em,
+      },
+    });
+  } catch (error) {
+    console.error('[Admin] Erro ao buscar estado do sorteio:', error.message);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao buscar estado do sorteio.',
+      error: error.message,
+    });
+  }
+});
+
+/**
+ * POST /api/admin/reset-database
+ * CUIDADO: Reseta TODOS os números e pedidos (apenas para desenvolvimento/testes)
+ */
+router.post('/reset-database', async (req, res) => {
+  try {
+    const { password } = req.body;
+
+    // Valida senha
+    if (password !== process.env.ADMIN_PASSWORD) {
+      return res.status(401).json({
+        success: false,
+        message: 'Senha incorreta.',
+      });
+    }
+
+    const Number = require('../models/Number');
+    const Order = require('../models/Order');
+    const RaffleState = require('../models/RaffleState');
+
+    // Deleta todos os números, pedidos e estado do sorteio
+    await Number.deleteMany({});
+    await Order.deleteMany({});
+    await RaffleState.deleteMany({});
+
+    // Reinicializa os 700 números
+    const totalNumbers = parseInt(process.env.TOTAL_NUMBERS) || 700;
+    const numbers = [];
+    for (let i = 1; i <= totalNumbers; i++) {
+      numbers.push({ numero: i, status: 'disponivel' });
+    }
+    await Number.insertMany(numbers);
+
+    console.log('[Admin] Database resetado com sucesso!');
+
+    res.json({
+      success: true,
+      message: `Database resetado! ${totalNumbers} números disponíveis.`,
+    });
+  } catch (error) {
+    console.error('[Admin] Erro ao resetar database:', error.message);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao resetar database.',
+      error: error.message,
+    });
+  }
+});
+
 module.exports = router;

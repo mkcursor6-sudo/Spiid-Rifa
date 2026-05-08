@@ -99,6 +99,44 @@ app.get('/api/config', (req, res) => {
   });
 });
 
+// ─── Estado do sorteio (público) ──────────────────────────────────────────────
+app.get('/api/sorteio/estado', async (req, res) => {
+  try {
+    const RaffleState = require('./models/RaffleState');
+    const raffleState = await RaffleState.findById('global').lean();
+
+    if (!raffleState || raffleState.status === 'ativa') {
+      return res.json({
+        success: true,
+        data: {
+          status: 'ativa',
+          finalizada: false,
+        },
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        status: 'finalizada',
+        finalizada: true,
+        numero_vencedor: raffleState.numero_vencedor,
+        ganhador_nome: raffleState.ganhador_nome,
+        sorteio_realizado_em: raffleState.sorteio_realizado_em,
+      },
+    });
+  } catch (error) {
+    console.error('[API] Erro ao buscar estado do sorteio:', error.message);
+    res.json({
+      success: true,
+      data: {
+        status: 'ativa',
+        finalizada: false,
+      },
+    });
+  }
+});
+
 // ─── Rotas ────────────────────────────────────────────────────────────────────
 app.use('/api/numbers', numbersRouter);
 app.use('/api/orders', orderLimiter, ordersRouter);
