@@ -17,6 +17,9 @@ const adminRouter = require('./routes/admin');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// ─── Trust Proxy (necessário para Square Cloud / proxies reversos) ────────────
+app.set('trust proxy', 1);
+
 // ─── Segurança ────────────────────────────────────────────────────────────────
 app.use(helmet());
 
