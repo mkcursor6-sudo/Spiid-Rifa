@@ -86,6 +86,11 @@ app.get('/health', (req, res) => {
   });
 });
 
+// ─── Ping (mantém o servidor acordado) ───────────────────────────────────────
+app.get('/ping', (req, res) => {
+  res.json({ status: 'pong', timestamp: new Date().toISOString() });
+});
+
 // ─── Config pública ───────────────────────────────────────────────────────────
 app.get('/api/config', (req, res) => {
   res.json({
